@@ -4,19 +4,26 @@
 #include <cmath>
 
 void cout_2D_vector(std::vector <std::vector <double>> a) {
-    for (auto &layer : a) {
-        std::cout << "\nLayer: \n\n";
-        for (auto &i : layer) {
-            std::cout << i;
-            std::cout << "\n";
+    for (int l = 0; l < a.size(); l++) {
+        std::cout << "\nLayer: " << l << "\n\n[";
+        for (int i = 0; i < a[l].size(); i++) {
+            std::cout << a[l][i];
+            if (i != a[l].size()-1) {
+                std::cout << ", ";
+            }
         }
+        std::cout << "]\n";
     }
 }
 void cout_vector(std::vector <double> a) {
-    for (auto &i : a) {
-        std::cout << i;
-        std::cout << "\n";
+    std::cout << "\n[";
+    for (int i = 0; i < a.size(); i++) {
+        std::cout << a[i];
+        if (i != a.size()-1) {
+            std::cout << ", ";
+        }
     }
+    std::cout << "]\n";
 }
 double rnd_val(double a, double b) {
     std::random_device rd;
@@ -88,13 +95,13 @@ public:
             z[L].resize(size[L]);
             //only fill the first layer with random input
             if (L == 0) {
-                for (int i = 0; i < z[L].size(); i++) {
+                for (int i = 0; i < size[L]; i++) {
                     z[L][i] = rnd_val(0.0, 1.0);
-                    s[L][i] = sigmoid(z[L][i]);
+                    s[L][i] = z[L][i];
                 }
             }
             else {
-                for (int i = 0; i < z[L].size(); i++) {
+                for (int i = 0; i < size[L]; i++) {
                     z[L][i] = 0;
                     s[L][i] = sigmoid(z[L][i]);
                 }
@@ -185,7 +192,7 @@ public: void init_random() {
         for (int L = 1; L < num_layers; L++) {
             for (int i = 0; i < size[L]; i++) {
                 for (int j = 0; j < size[L-1]; j++) {
-                    weights[L][j][i] += learning_rate * s[L - 1][i] * deltas[L][i];
+                    weights[L][j][i] += learning_rate * s[L - 1][j] * deltas[L][i];
                 }
                 biases[L][i] += learning_rate*deltas[L][i];
             }
@@ -197,8 +204,8 @@ public: void init_random() {
                 double out = 0;
                 out += biases[L][i];
 
-                for (int in_x = 0; in_x < size[L-1]; in_x++) {
-                    out += weights[L][in_x][i]*s[L-1][in_x];
+                for (int j = 0; j < size[L-1]; j++) {
+                    out += weights[L][j][i]*s[L-1][j];
                 }
 
                 s[L][i] = sigmoid(out);
@@ -215,11 +222,10 @@ public: void init_random() {
                 }
             }
             else {
-                for (int i = 0; i < size[L+1]; i++) {
+                for (int i = 0; i < size[L]; i++) {
                     double sum = 0.0;
                     for (int j = 0; j < size[L+1]; j++) {
-                        sum += weights[L+1][j][i] * deltas[L+1][j];
-                        j;
+                        sum += weights[L+1][i][j] * deltas[L+1][j];
                     }
                     deltas[L][i] = (sum * d_sigmoid(z[L][i]));
                 }
@@ -235,8 +241,10 @@ int main() {
     net.init_random();
     std::vector<double> y;
     y.reserve(net.size[net.size.size() - 1]);
+    std::vector <double> diff;
 
-    for (int sample = 0; sample < 1; sample++) {
+    for (int sample = 0; sample < 1000; sample++) {
+        net.init_random();
         net.init_neurons();
         for (int i = 0; i < net.size[net.size.size() - 1]; i++) {
             y.push_back(std::pow(net.z[0][i], 2));
@@ -244,22 +252,55 @@ int main() {
         net.target = y;
         auto net2 = net;
 
-
+        int l = 1;
+        int p = 4;
+        int q = 0;
         net.train();
 
-        // finite difference
-        net2.weights[1][0][0] += .001;
-        net2.fwd_propagate();
-        double f1 = cost_function(net2.target[0], net2.s[2][0]);
+        bool weights = false;
 
-        net2.weights[1][0][0] -= .002;
-        net2.fwd_propagate();
-        double f2 = cost_function(net2.target[0], net2.s[2][0]);
+        if (l < 0 or weights) {
+            // finite difference on weights
+            net2.weights[l][q][p] += .01;
+            net2.fwd_propagate();
+            double f1 = cost_function(net2.target[0], net2.s[2][0]);
 
-        double result = (f1-f2)/(.002);
+            net2.weights[l][q][p] -= .02;
+            net2.fwd_propagate();
+            double f2 = cost_function(net2.target[0], net2.s[2][0]);
 
-        std::cout << result << "\n";
-        std::cout << net.s[0][0]*net.deltas[1][0] << "\n\n";
+            double result = (f1-f2)/(.02);
+
+            std::cout << result << "\n";
+            std::cout << net.s[l-1][q]*net.deltas[l][p] << "\n\n";
+            diff.push_back(std::abs((result - net.s[l-1][q]*net.deltas[l][p])/result));
+        }
+        else {
+
+            for (int i = 0; i < 1; i++) {
+                net.train();
+            }
+            // finite difference on biases
+            net2.biases[l][p] += .01;
+            net2.fwd_propagate();
+            double f1 = cost_function(net2.target[0], net2.s[2][0]);
+
+            net2.biases[l][p] -= .02;
+            net2.fwd_propagate();
+            double f2 = cost_function(net2.target[0], net2.s[2][0]);
+            double result = (f1-f2)/(.02);
+
+            std::cout << result << "\n";
+            std::cout << net.deltas[l][p] << "\n\n";
+            diff.push_back(std::abs((result - net.deltas[l][p])/result));
+            //cout_2D_vector(net.deltas);
+        }
+
+
+        net2.weights[l][0][0] += .01;
+
+
+
 
 //        std::cout << "\nTarget:\n";
 //        cout_vector(net.target);
@@ -269,6 +310,7 @@ int main() {
 
         y.clear();
     }
+    std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
 
     return 0;
 }
