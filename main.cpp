@@ -2,6 +2,72 @@
 #include <vector>
 #include <random>
 #include <cmath>
+#include <fstream>
+
+unsigned char* read_mnist_labels(std::string &full_path, int& number_of_labels) {
+    auto reverseInt = [](int i) {
+        unsigned char c1, c2, c3, c4;
+        c1 = i & 255, c2 = (i >> 8) & 255, c3 = (i >> 16) & 255, c4 = (i >> 24) & 255;
+        return ((int)c1 << 24) + ((int)c2 << 16) + ((int)c3 << 8) + c4;
+    };
+
+    typedef unsigned char uchar;
+
+    std::ifstream file(full_path, std::ios::binary);
+
+    if(file.is_open()) {
+        int magic_number = 0;
+        file.read((char *)&magic_number, sizeof(magic_number));
+        magic_number = reverseInt(magic_number);
+
+        if(magic_number != 2049) throw std::runtime_error("Invalid MNIST label file!");
+
+        file.read((char *)&number_of_labels, sizeof(number_of_labels)), number_of_labels = reverseInt(number_of_labels);
+
+        uchar* _dataset = new uchar[number_of_labels];
+        for(int i = 0; i < number_of_labels; i++) {
+            file.read((char*)&_dataset[i], 1);
+        }
+        return _dataset;
+    } else {
+        throw std::runtime_error("Unable to open file `" + full_path + "`!");
+    }
+}
+unsigned char** read_mnist_images(std::string &full_path, int& number_of_images, int& image_size) {
+    auto reverseInt = [](int i) {
+        unsigned char c1, c2, c3, c4;
+        c1 = i & 255, c2 = (i >> 8) & 255, c3 = (i >> 16) & 255, c4 = (i >> 24) & 255;
+        return ((int)c1 << 24) + ((int)c2 << 16) + ((int)c3 << 8) + c4;
+    };
+
+    typedef unsigned char uchar;
+
+    std::ifstream file(full_path, std::ios::binary);
+
+    if(file.is_open()) {
+        int magic_number = 0, n_rows = 0, n_cols = 0;
+
+        file.read((char *)&magic_number, sizeof(magic_number));
+        magic_number = reverseInt(magic_number);
+
+        if(magic_number != 2051) throw std::runtime_error("Invalid MNIST image file!");
+
+        file.read((char *)&number_of_images, sizeof(number_of_images)), number_of_images = reverseInt(number_of_images);
+        file.read((char *)&n_rows, sizeof(n_rows)), n_rows = reverseInt(n_rows);
+        file.read((char *)&n_cols, sizeof(n_cols)), n_cols = reverseInt(n_cols);
+
+        image_size = n_rows * n_cols;
+
+        uchar** _dataset = new uchar*[number_of_images];
+        for(int i = 0; i < number_of_images; i++) {
+            _dataset[i] = new uchar[image_size];
+            file.read((char *)_dataset[i], image_size);
+        }
+        return _dataset;
+    } else {
+        throw std::runtime_error("Cannot open file `" + full_path + "`!");
+    }
+}
 
 void cout_2D_vector(std::vector <std::vector <double>> a) {
     for (int l = 0; l < a.size(); l++) {
@@ -263,6 +329,70 @@ public: void init_random() {
     }
 };
 
+void x_to_x_sqrd(network net, int train_size, int test_size, bool mini_batch, bool verbose) {
+    std::vector <double> diff;
+    std::vector<double> y;
+    std::vector<double> x;
+
+    int sample_size = train_size;
+    if (mini_batch) {
+        for (int sample = 0; sample < sample_size; sample++) {
+            double val = rnd_val(0.0, 1.0);
+            x.push_back(val);
+            y.push_back(std::pow(val, 2));
+        }
+        net.mini_batch_train(x, y, 10, 10);
+
+        for (int test = 0; test < test_size; test++) {
+            double val = rnd_val(0.0, 1.0);
+            net.z[0][0] = val;
+            net.s[0][0] = val;
+            net.target.push_back(std::pow(val, 2));
+            net.fwd_propagate();
+
+            if (verbose) {
+                std::cout << "\nTarget:\n";
+                cout_vector(net.target);
+
+                std::cout << "\nOutput:\n";
+                cout_vector(net.s[4]);
+                std::cout << "\n";
+            }
+            diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
+            net.target.clear();
+        }
+        std::cout << "Error:\t" <<std::accumulate(diff.begin(), diff.end(), 0.0) * 100 / diff.size() << "\n";
+        diff.clear();
+    }
+
+    else {
+        for (int sample = 0; sample < sample_size; sample++) {
+            net.init_neurons();
+            for (int i = 0; i < net.size[net.size.size() - 1]; i++) {
+                y.push_back(std::pow(net.z[0][i], 2));
+            }
+            net.target = y;
+            net.train();
+            net.fwd_propagate();
+
+            if (verbose) {
+                std::cout << "\nTarget:\n";
+                cout_vector(net.target);
+
+                std::cout << "\nOutput:\n";
+                cout_vector(net.s[4]);
+                std::cout << "\n";
+            }
+
+            if (sample > sample_size-test_size) {
+                diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
+            }
+            y.clear();
+        }
+        std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
+        diff.clear();
+    }
+}
 
 int main() {
     network net;
@@ -270,57 +400,8 @@ int main() {
     net.init_random();
     std::vector<double> y;
     std::vector<double> x;
-    std::vector <double> diff;
-
-    int sample_size = 100000;
-    for (int sample = 0; sample < sample_size; sample++) {
-        double val = rnd_val(0.0, 1.0);
-        x.push_back(val);
-        y.push_back(std::pow(val, 2));
-    }
-    net.mini_batch_train(x, y, 10, 10);
-
-    for (int test = 0; test < 100; test++) {
-        double val = rnd_val(0.0, 1.0);
-        net.z[0][0] = val;
-        net.s[0][0] = val;
-        net.target.push_back(std::pow(val, 2));
-        net.fwd_propagate();
-        std::cout << "\nTarget:\n";
-        cout_vector(net.target);
-
-        std::cout << "\nOutput:\n";
-        cout_vector(net.s[4]);
-        std::cout << "\n";
-        diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
-        net.target.clear();
-    }
-    std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
-    diff.clear();
-    return 0;
-
-    for (int sample = 0; sample < 100000; sample++) {
-        net.init_neurons();
-        for (int i = 0; i < net.size[net.size.size() - 1]; i++) {
-            y.push_back(std::pow(net.z[0][i], 2));
-        }
-        net.target = y;
-        net.train();
-        net.fwd_propagate();
 
 
-//        std::cout << "\nTarget:\n";
-//        cout_vector(net.target);
-//
-//        std::cout << "\nOutput:\n";
-//        cout_vector(net.s[4]);
-//        std::cout << "\n";
-
-        if (sample > 99000) {
-            diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
-        }
-        y.clear();
-    }
-    std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
+    x_to_x_sqrd(net, 100000, 100, true, false);
     return 0;
 }
