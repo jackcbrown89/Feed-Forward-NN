@@ -188,13 +188,42 @@ public: void init_random() {
     void train() {
         fwd_propagate();
         bwd_propagate();
-
+        update();
+    }
+    void update() {
         for (int L = 1; L < num_layers; L++) {
             for (int i = 0; i < size[L]; i++) {
                 for (int j = 0; j < size[L-1]; j++) {
                     weights[L][j][i] += learning_rate * s[L - 1][j] * deltas[L][i];
                 }
                 biases[L][i] += learning_rate*deltas[L][i];
+            }
+        }
+    }
+    void mini_batch_train(std::vector <double> &x, std::vector <double> &y, int batch_size, int epochs) {
+        std::vector<std::vector<std::vector<double>>> batch_deltas;
+        for (int epoch = 0; epoch < epochs; epoch++) {
+            for (int batch = 0; batch < std::floor(x.size() / batch_size); batch++) {
+                for (int i = batch * batch_size; i < batch_size * (batch + 1); i++) {
+                    z[0][0] = x[i];
+                    s[0][0] = x[i];
+                    target.push_back(y[i]);
+                    fwd_propagate();
+                    bwd_propagate();
+                    batch_deltas.push_back(deltas);
+                    target.clear();
+                }
+                for (int L = 0; L < batch_deltas[0].size(); L++) {
+                    for (int i = 0; i < batch_deltas[0][0].size(); i++) {
+                        double sum = 0.0;
+                        for (int bd = 0; bd < batch_deltas.size(); bd++) {
+                            sum += batch_deltas[bd][L][i];
+                        }
+                        deltas[L][i] = sum;
+                    }
+                }
+                batch_deltas.clear();
+                update();
             }
         }
     }
@@ -237,80 +266,61 @@ public: void init_random() {
 
 int main() {
     network net;
-    net.size = {1, 30, 1};
+    net.size = {1, 30, 30, 30, 1};
     net.init_random();
     std::vector<double> y;
-    y.reserve(net.size[net.size.size() - 1]);
+    std::vector<double> x;
     std::vector <double> diff;
 
-    for (int sample = 0; sample < 1000; sample++) {
-        net.init_random();
+    int sample_size = 100000;
+    for (int sample = 0; sample < sample_size; sample++) {
+        double val = rnd_val(0.0, 1.0);
+        x.push_back(val);
+        y.push_back(std::pow(val, 2));
+    }
+    net.mini_batch_train(x, y, 10, 10);
+
+    for (int test = 0; test < 100; test++) {
+        double val = rnd_val(0.0, 1.0);
+        net.z[0][0] = val;
+        net.s[0][0] = val;
+        net.target.push_back(std::pow(val, 2));
+        net.fwd_propagate();
+        std::cout << "\nTarget:\n";
+        cout_vector(net.target);
+
+        std::cout << "\nOutput:\n";
+        cout_vector(net.s[4]);
+        std::cout << "\n";
+        diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
+        net.target.clear();
+    }
+    std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
+    diff.clear();
+    return 0;
+
+    for (int sample = 0; sample < 100000; sample++) {
         net.init_neurons();
         for (int i = 0; i < net.size[net.size.size() - 1]; i++) {
             y.push_back(std::pow(net.z[0][i], 2));
         }
         net.target = y;
-        auto net2 = net;
-
-        int l = 1;
-        int p = 4;
-        int q = 0;
         net.train();
-
-        bool weights = false;
-
-        if (l < 0 or weights) {
-            // finite difference on weights
-            net2.weights[l][q][p] += .01;
-            net2.fwd_propagate();
-            double f1 = cost_function(net2.target[0], net2.s[2][0]);
-
-            net2.weights[l][q][p] -= .02;
-            net2.fwd_propagate();
-            double f2 = cost_function(net2.target[0], net2.s[2][0]);
-
-            double result = (f1-f2)/(.02);
-
-            std::cout << result << "\n";
-            std::cout << net.s[l-1][q]*net.deltas[l][p] << "\n\n";
-            diff.push_back(std::abs((result - net.s[l-1][q]*net.deltas[l][p])/result));
-        }
-        else {
-
-            for (int i = 0; i < 1; i++) {
-                net.train();
-            }
-            // finite difference on biases
-            net2.biases[l][p] += .01;
-            net2.fwd_propagate();
-            double f1 = cost_function(net2.target[0], net2.s[2][0]);
-
-            net2.biases[l][p] -= .02;
-            net2.fwd_propagate();
-            double f2 = cost_function(net2.target[0], net2.s[2][0]);
-            double result = (f1-f2)/(.02);
-
-            std::cout << result << "\n";
-            std::cout << net.deltas[l][p] << "\n\n";
-            diff.push_back(std::abs((result - net.deltas[l][p])/result));
-            //cout_2D_vector(net.deltas);
-        }
-
-
-        net2.weights[l][0][0] += .01;
-
-
+        net.fwd_propagate();
 
 
 //        std::cout << "\nTarget:\n";
 //        cout_vector(net.target);
 //
 //        std::cout << "\nOutput:\n";
-//        cout_vector(net.s[2]);
+//        cout_vector(net.s[4]);
+//        std::cout << "\n";
 
+        if (sample > 99000) {
+            diff.push_back(std::abs((net.s[4][0] - net.target[0]) / (net.target[0] + net.s[4][0])));
+        }
         y.clear();
     }
     std::cout << std::accumulate(diff.begin(), diff.end(), 0.0)*100/diff.size() << "\n";
-
     return 0;
 }
